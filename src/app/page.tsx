@@ -12,7 +12,6 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clips, setClips] = useState<Clip[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedClip, setSelectedClip] = useState<Clip | null>(null);
 
   useEffect(() => {
     fetchClips();
@@ -30,11 +29,14 @@ export default function Home() {
     }
   };
 
+  const handleClipClick = (clip: Clip) => {
+    router.push(`/clip/${clip.id}`);
+  };
+
   const handleDeleteClip = async (id: string) => {
     try {
       await fetch(`/api/clips/${id}`, { method: "DELETE" });
       setClips((prev) => prev.filter((c) => c.id !== id));
-      if (selectedClip?.id === id) setSelectedClip(null);
     } catch (err) {
       console.error("Failed to delete clip:", err);
     }
@@ -156,7 +158,7 @@ export default function Home() {
                 <ClipCard
                   key={clip.id}
                   clip={clip}
-                  onClick={setSelectedClip}
+                  onClick={handleClipClick}
                   onDelete={handleDeleteClip}
                 />
               ))}
@@ -164,41 +166,6 @@ export default function Home() {
           )}
         </section>
       </main>
-
-      {/* Clip Preview Modal */}
-      {selectedClip && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setSelectedClip(null)}
-        >
-          <div
-            className="relative max-w-4xl w-full rounded-2xl bg-surface overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setSelectedClip(null)}
-              className="absolute top-4 right-4 z-10 w-10 h-10 flex items-center justify-center bg-black/60 rounded-full text-white hover:bg-black/80 transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <video
-              src={selectedClip.video_url}
-              controls
-              autoPlay
-              loop
-              className="w-full"
-            />
-            <div className="p-4">
-              <p className="text-foreground font-medium">{selectedClip.prompt}</p>
-              <p className="text-muted text-sm mt-1">
-                {selectedClip.duration}s • {selectedClip.aspect_ratio}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
