@@ -27,7 +27,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { prompt } = body;
+    const { prompt, parentVariationId } = body;
 
     if (!prompt) {
       return NextResponse.json(
@@ -54,7 +54,8 @@ export async function POST(
       mode: "turbo",
     });
 
-    return NextResponse.json({ taskId: result.taskId });
+    // Return taskId and parentVariationId for tracking lineage
+    return NextResponse.json({ taskId: result.taskId, parentVariationId });
   } catch (error) {
     console.error("Failed to create variation:", error);
     return NextResponse.json(
@@ -72,7 +73,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { videoUrl, prompt } = body;
+    const { videoUrl, prompt, parentVariationId } = body;
 
     if (!videoUrl || !prompt) {
       return NextResponse.json(
@@ -93,6 +94,7 @@ export async function PUT(
     const variation: ClipVariation = {
       id: crypto.randomUUID(),
       parent_clip_id: id,
+      parent_variation_id: parentVariationId || undefined,
       video_url: videoUrl,
       image_url: clip.image_url,
       prompt,

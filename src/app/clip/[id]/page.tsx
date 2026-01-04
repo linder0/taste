@@ -4,8 +4,9 @@ import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { VideoScrubber } from "@/components/VideoScrubber";
 import { Sidebar } from "@/components/Sidebar";
+import { PromptHistory } from "@/components/PromptHistory";
 import { Spinner, PlayIcon } from "@/components/ui";
-import type { Clip, ClipVariation } from "@/types/project";
+import type { Clip, ClipVariation, ClipTag } from "@/types/project";
 
 interface ClipEditorPageProps {
   params: Promise<{ id: string }>;
@@ -17,6 +18,7 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clip, setClip] = useState<Clip | null>(null);
   const [variations, setVariations] = useState<ClipVariation[]>([]);
+  const [tags, setTags] = useState<ClipTag[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Variation generation state
@@ -24,15 +26,23 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
   const [variationPrompt, setVariationPrompt] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0); // 0 = original, 1+ = variations
 
+  // Tag creation state
+  const [pendingTagTimestamp, setPendingTagTimestamp] = useState<number | null>(null);
+  const [tagContent, setTagContent] = useState("");
+
+  // AI suggestion state
+  const [isSuggesting, setIsSuggesting] = useState(false);
+
   useEffect(() => {
     fetchClipData();
   }, [id]);
 
   const fetchClipData = async () => {
     try {
-      const [clipRes, variationsRes] = await Promise.all([
+      const [clipRes, variationsRes, tagsRes] = await Promise.all([
         fetch(`/api/clips/${id}`),
         fetch(`/api/clips/${id}/variations`),
+        fetch(`/api/clips/${id}/tags`),
       ]);
 
       if (!clipRes.ok) {
@@ -42,9 +52,11 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
 
       const clipData = await clipRes.json();
       const variationsData = await variationsRes.json();
+      const tagsData = await tagsRes.json();
 
       setClip(clipData.clip);
       setVariations(variationsData.variations || []);
+      setTags(tagsData.tags || []);
       setVariationPrompt(clipData.clip.prompt);
     } catch (err) {
       console.error("Failed to fetch clip:", err);
@@ -57,6 +69,9 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
   const handleCreateVariation = async () => {
     if (!clip || !variationPrompt.trim() || isGenerating) return;
 
+    // Determine if forking from a variation
+    const parentVariationId = selectedIndex > 0 ? variations[selectedIndex - 1]?.id : undefined;
+
     setIsGenerating(true);
     try {
       const res = await fetch(`/api/clips/${id}/variations`, {
@@ -64,12 +79,13 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: variationPrompt.trim(),
+          parentVariationId,
         }),
       });
 
       const data = await res.json();
       if (data.taskId) {
-        pollVariation(data.taskId);
+        pollVariation(data.taskId, data.parentVariationId);
       }
     } catch (err) {
       console.error("Failed to create variation:", err);
@@ -77,7 +93,7 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
     }
   };
 
-  const pollVariation = async (taskId: string) => {
+  const pollVariation = async (taskId: string, parentVariationId?: string) => {
     const poll = async () => {
       try {
         const res = await fetch(`/api/status/${taskId}`);
@@ -90,6 +106,7 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
             body: JSON.stringify({
               videoUrl: data.videoUrl,
               prompt: variationPrompt.trim(),
+              parentVariationId,
             }),
           });
           const saveData = await saveRes.json();
@@ -122,6 +139,85 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
       console.error("Failed to delete clip:", err);
     }
   };
+
+  const handleAddTag = (timestamp: number) => {
+    setPendingTagTimestamp(timestamp);
+    setTagContent("");
+  };
+
+  const handleSaveTag = async () => {
+    if (pendingTagTimestamp === null || !tagContent.trim()) return;
+    
+    try {
+      const selectedVariation = selectedIndex > 0 ? variations[selectedIndex - 1] : null;
+      const res = await fetch(`/api/clips/${id}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          timestamp: pendingTagTimestamp,
+          content: tagContent.trim(),
+          variationId: selectedVariation?.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.tag) {
+        setTags((prev) => [...prev, data.tag].sort((a, b) => a.timestamp - b.timestamp));
+      }
+    } catch (err) {
+      console.error("Failed to create tag:", err);
+    } finally {
+      setPendingTagTimestamp(null);
+      setTagContent("");
+    }
+  };
+
+  const handleDeleteTag = async (tagId: string) => {
+    try {
+      await fetch(`/api/clips/${id}/tags/${tagId}`, { method: "DELETE" });
+      setTags((prev) => prev.filter((t) => t.id !== tagId));
+    } catch (err) {
+      console.error("Failed to delete tag:", err);
+    }
+  };
+
+  const formatTime = (time: number) => {
+    const mins = Math.floor(time / 60);
+    const secs = Math.floor(time % 60);
+    const ms = Math.floor((time % 1) * 10);
+    return `${mins}:${secs.toString().padStart(2, "0")}.${ms}`;
+  };
+
+  const handleSuggestPrompt = async () => {
+    if (!clip || isSuggesting) return;
+
+    const selectedVariationId = selectedIndex > 0 ? variations[selectedIndex - 1]?.id : undefined;
+
+    setIsSuggesting(true);
+    try {
+      const res = await fetch(`/api/clips/${id}/suggest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPrompt: variationPrompt,
+          variationId: selectedVariationId,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.suggestion) {
+        setVariationPrompt(data.suggestion);
+      }
+    } catch (err) {
+      console.error("Failed to get suggestion:", err);
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
+
+  // Filter tags for current selection
+  const currentTags = selectedIndex === 0
+    ? tags.filter((t) => !t.variation_id)
+    : tags.filter((t) => t.variation_id === variations[selectedIndex - 1]?.id);
 
   // Get all items for the grid (original + variations)
   const allItems = clip ? [
@@ -191,6 +287,12 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
               <VideoScrubber
                 src={selectedItem.video_url}
                 duration={selectedItem.duration}
+                tags={currentTags}
+                onAddTag={handleAddTag}
+                onTagClick={(tag) => {
+                  // Could seek to tag timestamp in the future
+                  console.log("Tag clicked:", tag);
+                }}
               />
             )}
           </div>
@@ -228,59 +330,127 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
               rows={2}
               placeholder="Edit prompt..."
             />
-            <button
-              onClick={handleCreateVariation}
-              disabled={isGenerating || !variationPrompt.trim()}
-              className="w-full mt-2 py-2 rounded-lg bg-accent text-background text-xs font-medium hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-            >
-              {isGenerating ? (
-                <>
-                  <Spinner size="xs" className="text-background" />
-                  Generating...
-                </>
-              ) : (
-                "Generate Variation"
-              )}
-            </button>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={handleSuggestPrompt}
+                disabled={isSuggesting || isGenerating}
+                className="flex-1 py-2 rounded-lg bg-surface border border-border text-foreground text-xs font-medium hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
+              >
+                {isSuggesting ? (
+                  <>
+                    <Spinner size="xs" className="text-foreground" />
+                    <span>...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                    </svg>
+                    <span>Suggest</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleCreateVariation}
+                disabled={isGenerating || !variationPrompt.trim()}
+                className="flex-1 py-2 rounded-lg bg-accent text-background text-xs font-medium hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              >
+                {isGenerating ? (
+                  <>
+                    <Spinner size="xs" className="text-background" />
+                    <span>...</span>
+                  </>
+                ) : (
+                  "Generate"
+                )}
+              </button>
+            </div>
+            {currentTags.length > 0 && (
+              <p className="text-[10px] text-muted mt-1.5">
+                AI will consider {currentTags.length} tag{currentTags.length !== 1 ? "s" : ""} when suggesting
+              </p>
+            )}
           </div>
 
-          {/* All Versions */}
+          {/* Tags */}
+          <div className="p-3 border-b border-border flex-shrink-0">
+            <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">
+              Tags {currentTags.length > 0 && `(${currentTags.length})`}
+            </h3>
+            {pendingTagTimestamp !== null && (
+              <div className="mb-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <p className="text-xs text-amber-400 mb-1">Tag @ {formatTime(pendingTagTimestamp)}</p>
+                <input
+                  type="text"
+                  value={tagContent}
+                  onChange={(e) => setTagContent(e.target.value)}
+                  placeholder="What's wrong here?"
+                  className="w-full bg-surface rounded p-1.5 text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveTag();
+                    if (e.key === "Escape") setPendingTagTimestamp(null);
+                  }}
+                />
+                <div className="flex gap-2 mt-1.5">
+                  <button
+                    onClick={handleSaveTag}
+                    disabled={!tagContent.trim()}
+                    className="flex-1 py-1 text-xs bg-amber-500 text-black rounded hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setPendingTagTimestamp(null)}
+                    className="px-2 py-1 text-xs text-muted hover:text-foreground transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            {currentTags.length > 0 ? (
+              <div className="space-y-1 max-h-24 overflow-y-auto">
+                {currentTags.map((tag) => (
+                  <div key={tag.id} className="flex items-center gap-2 group">
+                    <span className="text-xs text-amber-400 font-mono w-12 flex-shrink-0">
+                      {formatTime(tag.timestamp)}
+                    </span>
+                    <span className="text-xs text-foreground flex-1 truncate">{tag.content}</span>
+                    <button
+                      onClick={() => handleDeleteTag(tag.id)}
+                      className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted italic">Click "+ Tag" below video to mark issues</p>
+            )}
+          </div>
+
+          {/* History Tree */}
           <div className="flex-1 overflow-y-auto p-3">
-            <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">All Versions</h3>
-            <div className="space-y-2">
-              {allItems.map((item, index) => (
-                <button
-                  key={item.id}
-                  onClick={() => setSelectedIndex(index)}
-                  className={`w-full rounded-lg overflow-hidden border-2 transition-all ${
-                    selectedIndex === index
-                      ? "border-accent"
-                      : "border-transparent hover:border-border"
-                  }`}
-                >
-                  <div className="relative aspect-video bg-surface-elevated">
-                    <video
-                      src={item.video_url}
-                      className="w-full h-full object-cover"
-                      muted
-                      onMouseEnter={(e) => e.currentTarget.play()}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.pause();
-                        e.currentTarget.currentTime = 0;
-                      }}
-                    />
-                    <div className="absolute top-1 left-1">
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${item.isOriginal ? "bg-accent text-background" : "bg-black/60 text-white"}`}>
-                        {item.isOriginal ? "Original" : `V${index}`}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="p-2 bg-surface text-left">
-                    <p className="text-xs text-foreground line-clamp-1">{item.prompt}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">History</h3>
+            <PromptHistory
+              clip={clip}
+              variations={variations}
+              selectedId={selectedItem?.id === "original" ? clip.id : (selectedItem?.id || clip.id)}
+              onSelect={(selectedId, isOriginal) => {
+                if (isOriginal) {
+                  setSelectedIndex(0);
+                } else {
+                  const varIndex = variations.findIndex((v) => v.id === selectedId);
+                  if (varIndex !== -1) {
+                    setSelectedIndex(varIndex + 1);
+                  }
+                }
+              }}
+            />
           </div>
         </div>
       </main>

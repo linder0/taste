@@ -23,10 +23,21 @@ export interface ClipTimeline {
 export interface ClipVariation {
   id: string;
   parent_clip_id: string;
+  parent_variation_id?: string; // forked from (null = from original)
   video_url: string;
   image_url: string;
   prompt: string;
   duration: number;
   aspect_ratio: string;
+  created_at: number;
+}
+
+// Lightweight timestamp tag for marking issues
+export interface ClipTag {
+  id: string;
+  clip_id: string;
+  variation_id?: string; // null = original clip
+  timestamp: number;
+  content: string;
   created_at: number;
 }

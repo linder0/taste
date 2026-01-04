@@ -1,14 +1,25 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import type { ClipTag } from "@/types/project";
 
 interface VideoScrubberProps {
   src: string;
   duration: number;
   className?: string;
+  tags?: ClipTag[];
+  onAddTag?: (timestamp: number) => void;
+  onTagClick?: (tag: ClipTag) => void;
 }
 
-export function VideoScrubber({ src, duration, className = "" }: VideoScrubberProps) {
+export function VideoScrubber({ 
+  src, 
+  duration, 
+  className = "",
+  tags = [],
+  onAddTag,
+  onTagClick,
+}: VideoScrubberProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrubberRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -159,9 +170,26 @@ export function VideoScrubber({ src, duration, className = "" }: VideoScrubberPr
             style={{ width: `${progress}%` }}
           />
 
+          {/* Tag markers */}
+          {tags.map((tag) => {
+            const tagPosition = duration > 0 ? (tag.timestamp / duration) * 100 : 0;
+            return (
+              <button
+                key={tag.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTagClick?.(tag);
+                }}
+                className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-amber-500 hover:bg-amber-400 rounded-full shadow-lg z-10 transition-colors"
+                style={{ left: `calc(${tagPosition}% - 5px)` }}
+                title={tag.content}
+              />
+            );
+          })}
+
           {/* Playhead */}
           <div
-            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-accent rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-accent rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-20"
             style={{ left: `calc(${progress}% - 6px)` }}
           />
         </div>
@@ -188,8 +216,18 @@ export function VideoScrubber({ src, duration, className = "" }: VideoScrubberPr
             </span>
           </div>
 
-          <div className="text-xs text-muted">
-            Space to play • ←→ to scrub
+          <div className="flex items-center gap-3">
+            {onAddTag && (
+              <button
+                onClick={() => onAddTag(currentTime)}
+                className="px-2 py-1 text-xs bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 rounded transition-colors"
+              >
+                + Tag @ {formatTime(currentTime)}
+              </button>
+            )}
+            <span className="text-xs text-muted">
+              Space to play • ←→ to scrub
+            </span>
           </div>
         </div>
       </div>
