@@ -97,11 +97,19 @@ export function VideoScrubber({ src, duration, className = "" }: VideoScrubberPr
   );
 
   const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
+    (e: MouseEvent) => {
       if (!isDragging) return;
-      handleScrubberClick(e);
+      const scrubber = scrubberRef.current;
+      const video = videoRef.current;
+      if (!scrubber || !video) return;
+
+      const rect = scrubber.getBoundingClientRect();
+      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+      const percentage = x / rect.width;
+      const newTime = percentage * duration;
+      video.currentTime = Math.max(0, Math.min(duration, newTime));
     },
-    [isDragging, handleScrubberClick]
+    [isDragging, duration]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -110,11 +118,16 @@ export function VideoScrubber({ src, duration, className = "" }: VideoScrubberPr
 
   useEffect(() => {
     if (isDragging) {
+      const handleGlobalMouseMove = (e: MouseEvent) => handleMouseMove(e);
       const handleGlobalMouseUp = () => setIsDragging(false);
+      window.addEventListener("mousemove", handleGlobalMouseMove);
       window.addEventListener("mouseup", handleGlobalMouseUp);
-      return () => window.removeEventListener("mouseup", handleGlobalMouseUp);
+      return () => {
+        window.removeEventListener("mousemove", handleGlobalMouseMove);
+        window.removeEventListener("mouseup", handleGlobalMouseUp);
+      };
     }
-  }, [isDragging]);
+  }, [isDragging, handleMouseMove]);
 
   const formatTime = (time: number) => {
     const mins = Math.floor(time / 60);
@@ -139,8 +152,6 @@ export function VideoScrubber({ src, duration, className = "" }: VideoScrubberPr
           ref={scrubberRef}
           className="relative h-2 bg-surface-elevated rounded-full cursor-pointer select-none group"
           onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
         >
           {/* Progress */}
           <div
