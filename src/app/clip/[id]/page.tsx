@@ -5,34 +5,24 @@ import { useRouter } from "next/navigation";
 import { VideoScrubber } from "@/components/VideoScrubber";
 import { Sidebar } from "@/components/Sidebar";
 import { Spinner, PlayIcon } from "@/components/ui";
-import type { Clip, ClipTimeline, ClipVariation } from "@/types/project";
+import type { Clip, ClipVariation } from "@/types/project";
 
 interface ClipEditorPageProps {
   params: Promise<{ id: string }>;
 }
-
-type MarkerType = ClipTimeline["type"];
 
 export default function ClipEditorPage({ params }: ClipEditorPageProps) {
   const { id } = use(params);
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clip, setClip] = useState<Clip | null>(null);
-  const [timeline, setTimeline] = useState<ClipTimeline[]>([]);
   const [variations, setVariations] = useState<ClipVariation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentTime, setCurrentTime] = useState(0);
 
   // Variation generation state
   const [isGenerating, setIsGenerating] = useState(false);
   const [variationPrompt, setVariationPrompt] = useState("");
-  const [activeVariation, setActiveVariation] = useState<ClipVariation | null>(null);
-
-  // Add marker modal
-  const [showAddMarker, setShowAddMarker] = useState(false);
-  const [markerTime, setMarkerTime] = useState(0);
-  const [markerType, setMarkerType] = useState<MarkerType>("keyframe");
-  const [markerContent, setMarkerContent] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0); // 0 = original, 1+ = variations
 
   useEffect(() => {
     fetchClipData();
@@ -40,9 +30,8 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
 
   const fetchClipData = async () => {
     try {
-      const [clipRes, timelineRes, variationsRes] = await Promise.all([
+      const [clipRes, variationsRes] = await Promise.all([
         fetch(`/api/clips/${id}`),
-        fetch(`/api/clips/${id}/timeline`),
         fetch(`/api/clips/${id}/variations`),
       ]);
 
@@ -52,11 +41,9 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
       }
 
       const clipData = await clipRes.json();
-      const timelineData = await timelineRes.json();
       const variationsData = await variationsRes.json();
 
       setClip(clipData.clip);
-      setTimeline(timelineData.timeline || []);
       setVariations(variationsData.variations || []);
       setVariationPrompt(clipData.clip.prompt);
     } catch (err) {
@@ -64,46 +51,6 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
       router.push("/");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleAddMarker = (time: number) => {
-    setMarkerTime(time);
-    setMarkerContent("");
-    setMarkerType("keyframe");
-    setShowAddMarker(true);
-  };
-
-  const handleSaveMarker = async () => {
-    if (!markerContent.trim()) return;
-
-    try {
-      const res = await fetch(`/api/clips/${id}/timeline`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          timestamp: markerTime,
-          type: markerType,
-          content: markerContent.trim(),
-        }),
-      });
-
-      const data = await res.json();
-      if (data.marker) {
-        setTimeline((prev) => [...prev, data.marker].sort((a, b) => a.timestamp - b.timestamp));
-      }
-      setShowAddMarker(false);
-    } catch (err) {
-      console.error("Failed to add marker:", err);
-    }
-  };
-
-  const handleDeleteMarker = async (markerId: string) => {
-    try {
-      await fetch(`/api/clips/${id}/timeline/${markerId}`, { method: "DELETE" });
-      setTimeline((prev) => prev.filter((m) => m.id !== markerId));
-    } catch (err) {
-      console.error("Failed to delete marker:", err);
     }
   };
 
@@ -148,7 +95,7 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
           const saveData = await saveRes.json();
           if (saveData.variation) {
             setVariations((prev) => [saveData.variation, ...prev]);
-            setActiveVariation(saveData.variation);
+            setSelectedIndex(1); // Select the new variation
           }
           setIsGenerating(false);
         } else if (data.status === "failed") {
@@ -176,11 +123,13 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
     }
   };
 
-  const formatTime = (time: number) => {
-    const mins = Math.floor(time / 60);
-    const secs = Math.floor(time % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
+  // Get all items for the grid (original + variations)
+  const allItems = clip ? [
+    { id: "original", video_url: clip.video_url, prompt: clip.prompt, duration: clip.duration, isOriginal: true },
+    ...variations.map((v) => ({ ...v, isOriginal: false })),
+  ] : [];
+
+  const selectedItem = allItems[selectedIndex];
 
   if (loading) {
     return (
@@ -193,7 +142,7 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
   if (!clip) return null;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden bg-background">
       <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(false)} />
 
       {/* Header */}
@@ -217,225 +166,124 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
             VideoGen
           </button>
           <span className="text-muted text-sm">/</span>
-          <span className="text-foreground text-sm font-medium">Editor</span>
+          <span className="text-foreground text-sm font-medium">Compare</span>
         </div>
-        <button
-          onClick={handleDeleteClip}
-          className="px-2 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
-        >
-          Delete
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted">
+            {variations.length + 1} version{variations.length !== 0 ? "s" : ""}
+          </span>
+          <button
+            onClick={handleDeleteClip}
+            className="px-2 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
+          >
+            Delete
+          </button>
+        </div>
       </header>
 
-      {/* Main Content - Fixed Height */}
+      {/* Main Content */}
       <main className="flex-1 flex overflow-hidden">
-        {/* Left Panel - Videos */}
-        <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
-          <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
-            {/* Original */}
-            <div className="flex flex-col min-h-0">
-              <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2 flex-shrink-0">Original</h3>
-              <div className="flex-1 min-h-0">
-                <VideoScrubber
-                  src={clip.video_url}
-                  duration={clip.duration}
-                  markers={timeline}
-                  onTimeUpdate={setCurrentTime}
-                  onAddMarker={handleAddMarker}
-                  compact
-                />
-              </div>
-            </div>
-
-            {/* Variation */}
-            <div className="flex flex-col min-h-0">
-              <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2 flex-shrink-0">
-                Variation {variations.length > 0 && `(${variations.length})`}
-              </h3>
-              <div className="flex-1 min-h-0">
-                {isGenerating ? (
-                  <div className="h-full rounded-lg bg-surface flex flex-col items-center justify-center gap-2">
-                    <Spinner size="md" className="text-accent" />
-                    <p className="text-muted text-xs">Generating...</p>
-                  </div>
-                ) : activeVariation ? (
-                  <VideoScrubber
-                    src={activeVariation.video_url}
-                    duration={activeVariation.duration}
-                    compact
-                  />
-                ) : (
-                  <div className="h-full rounded-lg bg-surface flex flex-col items-center justify-center gap-2">
-                    <svg className="w-8 h-8 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    <p className="text-muted text-xs">Create a variation</p>
-                  </div>
-                )}
-              </div>
-              {variations.length > 1 && (
-                <div className="mt-2 flex gap-1 overflow-x-auto flex-shrink-0">
-                  {variations.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => setActiveVariation(v)}
-                      className={`flex-shrink-0 w-12 h-8 rounded overflow-hidden border-2 transition-colors ${
-                        activeVariation?.id === v.id ? "border-accent" : "border-transparent hover:border-border"
-                      }`}
-                    >
-                      <img src={v.image_url} alt="" className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+        {/* Left - Main Video View */}
+        <div className="flex-1 flex flex-col p-4 overflow-hidden">
+          {/* Selected Video */}
+          <div className="flex-1 min-h-0">
+            {selectedItem && (
+              <VideoScrubber
+                src={selectedItem.video_url}
+                duration={selectedItem.duration}
+              />
+            )}
           </div>
+
+          {/* Selected Info */}
+          {selectedItem && (
+            <div className="mt-3 flex-shrink-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`text-xs px-2 py-0.5 rounded ${selectedItem.isOriginal ? "bg-accent/20 text-accent" : "bg-surface-elevated text-muted"}`}>
+                  {selectedItem.isOriginal ? "Original" : `Variation ${selectedIndex}`}
+                </span>
+              </div>
+              <p className="text-sm text-foreground line-clamp-2">{selectedItem.prompt}</p>
+            </div>
+          )}
         </div>
 
-        {/* Right Panel - Details */}
+        {/* Right - Sidebar */}
         <div className="w-80 flex-shrink-0 border-l border-border flex flex-col overflow-hidden">
           {/* Input Image */}
           <div className="p-3 border-b border-border flex-shrink-0">
-            <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Input</h3>
+            <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Source</h3>
             <div className="rounded-lg overflow-hidden bg-surface-elevated">
               <img src={clip.image_url} alt="" className="w-full aspect-video object-contain" />
             </div>
           </div>
 
-          {/* Prompt */}
+          {/* New Variation */}
           <div className="p-3 border-b border-border flex-shrink-0">
-            <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Prompt</h3>
+            <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">New Variation</h3>
             <textarea
               value={variationPrompt}
               onChange={(e) => setVariationPrompt(e.target.value)}
               className="w-full bg-surface rounded-lg p-2 text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-accent text-xs"
               rows={2}
+              placeholder="Edit prompt..."
             />
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-muted">
-                {variationPrompt !== clip.prompt ? "Modified" : "Original"}
-              </span>
-              <button
-                onClick={handleCreateVariation}
-                disabled={isGenerating || !variationPrompt.trim()}
-                className="px-3 py-1 rounded-md bg-accent text-background text-xs font-medium hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                {isGenerating ? "..." : "Generate"}
-              </button>
-            </div>
+            <button
+              onClick={handleCreateVariation}
+              disabled={isGenerating || !variationPrompt.trim()}
+              className="w-full mt-2 py-2 rounded-lg bg-accent text-background text-xs font-medium hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            >
+              {isGenerating ? (
+                <>
+                  <Spinner size="xs" className="text-background" />
+                  Generating...
+                </>
+              ) : (
+                "Generate Variation"
+              )}
+            </button>
           </div>
 
-          {/* Timeline Markers */}
-          <div className="flex-1 flex flex-col overflow-hidden p-3">
-            <div className="flex items-center justify-between mb-2 flex-shrink-0">
-              <h3 className="text-xs font-medium text-muted uppercase tracking-wider">Markers</h3>
-              <button
-                onClick={() => handleAddMarker(currentTime)}
-                className="text-xs text-accent hover:text-accent-hover transition-colors"
-              >
-                + Add
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto min-h-0">
-              {timeline.length === 0 ? (
-                <p className="text-muted text-xs text-center py-4">
-                  Press M to add marker
-                </p>
-              ) : (
-                <div className="space-y-1">
-                  {timeline.map((marker) => (
-                    <div
-                      key={marker.id}
-                      className="flex items-start gap-2 p-2 rounded-md bg-surface hover:bg-surface-hover transition-colors group"
-                    >
-                      <span className="text-xs font-mono text-accent flex-shrink-0">
-                        {formatTime(marker.timestamp)}
+          {/* All Versions */}
+          <div className="flex-1 overflow-y-auto p-3">
+            <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">All Versions</h3>
+            <div className="space-y-2">
+              {allItems.map((item, index) => (
+                <button
+                  key={item.id}
+                  onClick={() => setSelectedIndex(index)}
+                  className={`w-full rounded-lg overflow-hidden border-2 transition-all ${
+                    selectedIndex === index
+                      ? "border-accent"
+                      : "border-transparent hover:border-border"
+                  }`}
+                >
+                  <div className="relative aspect-video bg-surface-elevated">
+                    <video
+                      src={item.video_url}
+                      className="w-full h-full object-cover"
+                      muted
+                      onMouseEnter={(e) => e.currentTarget.play()}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.pause();
+                        e.currentTarget.currentTime = 0;
+                      }}
+                    />
+                    <div className="absolute top-1 left-1">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${item.isOriginal ? "bg-accent text-background" : "bg-black/60 text-white"}`}>
+                        {item.isOriginal ? "Original" : `V${index}`}
                       </span>
-                      <span
-                        className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-                          marker.type === "keyframe"
-                            ? "bg-accent/20 text-accent"
-                            : marker.type === "note"
-                            ? "bg-yellow-500/20 text-yellow-400"
-                            : "bg-blue-500/20 text-blue-400"
-                        }`}
-                      >
-                        {marker.type === "keyframe" ? "K" : marker.type === "note" ? "N" : "S"}
-                      </span>
-                      <p className="flex-1 text-xs text-foreground truncate">{marker.content}</p>
-                      <button
-                        onClick={() => handleDeleteMarker(marker.id)}
-                        className="text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
                     </div>
-                  ))}
-                </div>
-              )}
+                  </div>
+                  <div className="p-2 bg-surface text-left">
+                    <p className="text-xs text-foreground line-clamp-1">{item.prompt}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>
       </main>
-
-      {/* Add Marker Modal */}
-      {showAddMarker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setShowAddMarker(false)}>
-          <div className="bg-surface rounded-xl p-4 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-foreground mb-3">Add Marker at {formatTime(markerTime)}</h3>
-
-            <div className="space-y-3">
-              <div className="flex gap-1.5 flex-wrap">
-                {(["keyframe", "note", "segment_start", "segment_end"] as MarkerType[]).map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => setMarkerType(type)}
-                    className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                      markerType === type
-                        ? type === "keyframe"
-                          ? "bg-accent text-background"
-                          : type === "note"
-                          ? "bg-yellow-500 text-black"
-                          : "bg-blue-500 text-white"
-                        : "bg-surface-hover text-muted hover:text-foreground"
-                    }`}
-                  >
-                    {type.replace("_", " ")}
-                  </button>
-                ))}
-              </div>
-
-              <textarea
-                value={markerContent}
-                onChange={(e) => setMarkerContent(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground placeholder:text-muted focus:border-accent focus:outline-none resize-none text-sm"
-                rows={2}
-                placeholder={markerType === "keyframe" ? "What should happen..." : "Note..."}
-                autoFocus
-              />
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowAddMarker(false)}
-                  className="flex-1 py-2 rounded-lg bg-surface-hover text-foreground text-sm font-medium hover:bg-surface-elevated transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveMarker}
-                  disabled={!markerContent.trim()}
-                  className="flex-1 py-2 rounded-lg bg-accent text-background text-sm font-medium hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
