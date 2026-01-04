@@ -63,4 +63,3 @@ export function ClipCard({ clip, onClick, onDelete }: ClipCardProps) {
     </div>
   );
 }
-

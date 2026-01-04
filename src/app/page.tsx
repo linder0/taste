@@ -1,37 +1,30 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ClipCard } from "@/components/ClipCard";
-import { ProjectCard, NewProjectCard } from "@/components/ProjectCard";
 import { Sidebar } from "@/components/Sidebar";
 import { Spinner, PlayIcon, MenuIcon } from "@/components/ui";
-import type { Clip, Project } from "@/types/project";
+import type { Clip } from "@/types/project";
 
 export default function Home() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clips, setClips] = useState<Clip[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedClip, setSelectedClip] = useState<Clip | null>(null);
 
   useEffect(() => {
-    fetchData();
+    fetchClips();
   }, []);
 
-  const fetchData = async () => {
+  const fetchClips = async () => {
     try {
-      const [clipsRes, projectsRes] = await Promise.all([
-        fetch("/api/clips"),
-        fetch("/api/projects"),
-      ]);
-      const clipsData = await clipsRes.json();
-      const projectsData = await projectsRes.json();
-      setClips(clipsData.clips || []);
-      setProjects(projectsData.projects || []);
+      const res = await fetch("/api/clips");
+      const data = await res.json();
+      setClips(data.clips || []);
     } catch (err) {
-      console.error("Failed to fetch data:", err);
+      console.error("Failed to fetch clips:", err);
     } finally {
       setLoading(false);
     }
@@ -47,31 +40,6 @@ export default function Home() {
     }
   };
 
-  const handleDeleteProject = async (id: string) => {
-    try {
-      await fetch(`/api/projects/${id}`, { method: "DELETE" });
-      setProjects((prev) => prev.filter((p) => p.id !== id));
-    } catch (err) {
-      console.error("Failed to delete project:", err);
-    }
-  };
-
-  const handleCreateProject = useCallback(async () => {
-    try {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Untitled Project" }),
-      });
-      const data = await res.json();
-      if (data.project) {
-        router.push(`/project/${data.project.id}`);
-      }
-    } catch (err) {
-      console.error("Failed to create project:", err);
-    }
-  }, [router]);
-
   return (
     <div className="min-h-screen">
       <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(false)} />
@@ -79,7 +47,7 @@ export default function Home() {
       {/* Header */}
       <header className="sticky top-0 z-30 bg-background border-b border-border px-4 py-3 flex items-center gap-3">
         <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
+          onClick={() => setSidebarOpen(true)}
           className="p-2 text-muted hover:text-foreground rounded-lg hover:bg-surface-hover transition-colors"
         >
           <MenuIcon />
@@ -108,7 +76,7 @@ export default function Home() {
               </div>
               <div className="text-center sm:text-left">
                 <h2 className="text-xl sm:text-2xl font-semibold text-foreground mb-1">
-                  Create New
+                  Create New Video
                 </h2>
                 <p className="text-muted text-sm">
                   Transform your images into animated videos with AI
@@ -125,7 +93,7 @@ export default function Home() {
           </h3>
           <div className="flex gap-3 flex-wrap">
             <button
-              onClick={() => router.push("/create?type=video")}
+              onClick={() => router.push("/create")}
               className="flex items-center gap-3 px-5 py-3 rounded-xl bg-surface hover:bg-surface-hover border border-border hover:border-accent/50 transition-all"
             >
               <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
@@ -155,53 +123,12 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Projects */}
-        <section className="mb-10">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-muted uppercase tracking-wider">
-              Projects
-            </h3>
-            {projects.length > 0 && (
-              <button className="text-xs text-accent hover:text-accent-hover transition-colors">
-                View all →
-              </button>
-            )}
-          </div>
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Spinner size="md" className="text-accent" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              <NewProjectCard onClick={handleCreateProject} />
-              {projects.slice(0, 3).map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  onClick={(p) => router.push(`/project/${p.id}`)}
-                  onDelete={handleDeleteProject}
-                />
-              ))}
-            </div>
-          )}
-          {!loading && projects.length === 0 && (
-            <p className="text-muted text-sm text-center py-4">
-              No projects yet. Create a project to organize your clips.
-            </p>
-          )}
-        </section>
-
-        {/* Recent Clips */}
+        {/* Clips */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium text-muted uppercase tracking-wider">
-              Recent Clips
+              Your Clips
             </h3>
-            {clips.length > 4 && (
-              <button className="text-xs text-accent hover:text-accent-hover transition-colors">
-                View all →
-              </button>
-            )}
           </div>
           {loading ? (
             <div className="flex justify-center py-12">

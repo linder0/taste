@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const { videoUrl, imageUrl, prompt, duration, aspectRatio, projectId } = body;
+    const { videoUrl, imageUrl, prompt, duration, aspectRatio } = body;
 
     if (!videoUrl || !imageUrl || !prompt) {
       return NextResponse.json(
@@ -35,7 +35,6 @@ export async function POST(request: NextRequest) {
       duration: duration || 5,
       aspect_ratio: aspectRatio || "16:9",
       created_at: Date.now(),
-      project_id: projectId || null,
     };
 
     createClip(clip);
@@ -49,4 +48,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
