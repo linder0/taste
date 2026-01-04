@@ -41,7 +41,7 @@ export async function POST(
 
     // Get all tags for this clip
     const allTags = getAllClipTags(id);
-    
+
     // Filter tags for the relevant variation or original
     const relevantTags = variationId
       ? allTags.filter((t) => t.variation_id === variationId)
@@ -54,7 +54,7 @@ export async function POST(
       ? `\n\nThe user has marked these issues at specific timestamps:\n${relevantTags.map((t) => `- ${t.timestamp.toFixed(1)}s: "${t.content}"`).join("\n")}`
       : "";
 
-    const systemPrompt = `You are an expert at improving video generation prompts. 
+    const systemPrompt = `You are an expert at improving video generation prompts.
 You help users refine their prompts to get better AI-generated video results.
 
 Given the original prompt, current prompt (may be the same), and any issues the user has marked at specific timestamps, suggest an improved prompt that:
@@ -120,4 +120,3 @@ Based on the above, suggest an improved prompt that addresses any issues and pro
     );
   }
 }
-

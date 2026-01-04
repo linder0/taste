@@ -12,9 +12,9 @@ interface VideoScrubberProps {
   onTagClick?: (tag: ClipTag) => void;
 }
 
-export function VideoScrubber({ 
-  src, 
-  duration, 
+export function VideoScrubber({
+  src,
+  duration,
   className = "",
   tags = [],
   onAddTag,

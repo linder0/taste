@@ -147,7 +147,7 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
 
   const handleSaveTag = async () => {
     if (pendingTagTimestamp === null || !tagContent.trim()) return;
-    
+
     try {
       const selectedVariation = selectedIndex > 0 ? variations[selectedIndex - 1] : null;
       const res = await fetch(`/api/clips/${id}/tags`, {
@@ -326,8 +326,8 @@ export default function ClipEditorPage({ params }: ClipEditorPageProps) {
             <textarea
               value={variationPrompt}
               onChange={(e) => setVariationPrompt(e.target.value)}
-              className="w-full bg-surface rounded-lg p-2 text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-accent text-xs"
-              rows={2}
+              className="w-full bg-surface rounded-lg p-2 text-foreground resize-y focus:outline-none focus:ring-1 focus:ring-accent text-xs min-h-[60px]"
+              rows={4}
               placeholder="Edit prompt..."
             />
             <div className="flex gap-2 mt-2">
