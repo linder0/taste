@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kling Video Generator
+
+A Next.js web app that transforms images into cinematic videos using PiAPI's Kling AI.
+
+## Features
+
+- **Dual image input** - Upload files or paste URLs
+- **Prompt presets** - Quick templates for cinematic, portrait, nature, action styles
+- **Duration control** - 5 or 10 second clips
+- **Aspect ratio** - 16:9 (landscape) or 9:16 (vertical/portrait)
+- **Real-time progress** - Polling with progress indicator
+- **Video download** - Preview and download generated videos
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure API keys
+
+Edit `.env.local` and add your API keys:
+
+```
+PIAPI_API_KEY=your_actual_api_key_here
+IMGBB_API_KEY=your_imgbb_api_key_here
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
+```
+
+- **PiAPI key:** Get at [piapi.ai](https://piapi.ai) (required for video generation)
+- **imgbb key:** Get at [api.imgbb.com](https://api.imgbb.com/) (required for file uploads, free)
+
+> **Note:** File uploads require imgbb because PiAPI needs publicly accessible image URLs. Alternatively, use "Paste URL" mode with images already hosted online.
+
+### 3. Run the development server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Framework:** Next.js 16 with App Router
+- **Styling:** Tailwind CSS v4
+- **API:** PiAPI Kling (image-to-video)
+- **Storage:** Local filesystem (dev mode)
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+├── app/
+│   ├── page.tsx           # Main generator UI
+│   └── api/
+│       ├── upload/        # Image upload endpoint
+│       ├── generate/      # Create video task
+│       └── status/        # Poll task status
+├── components/
+│   ├── ImageInput.tsx     # Upload + URL input
+│   ├── PromptEditor.tsx   # Prompt with presets
+│   ├── VideoSettings.tsx  # Duration + aspect ratio
+│   ├── GenerationProgress.tsx
+│   └── VideoPlayer.tsx
+└── lib/
+    └── piapi.ts           # API client
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API Routes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/upload` | POST | Upload image file |
+| `/api/generate` | POST | Start video generation |
+| `/api/status/[taskId]` | GET | Check generation status |
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
